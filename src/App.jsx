@@ -4,11 +4,15 @@ import { db } from './firebase';
 import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState('landing');
+  const [currentView, setCurrentView] = useState(() => {
+    return localStorage.getItem('rel_current_view') || 'landing';
+  });
   const [activeProfile, setActiveProfile] = useState(() => {
     return localStorage.getItem('rel_active_profile') || 'Madhav';
   });
-  const [activeTab, setActiveTab] = useState('quiz');
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('rel_active_tab') || 'quiz';
+  });
 
   // Quiz State
   const [currentQuizQuestions, setCurrentQuizQuestions] = useState([]);
@@ -73,15 +77,22 @@ export default function App() {
 
   const [newEvent, setNewEvent] = useState({ date: '', title: '', category: 'Milestone', description: '' });
 
-  // Save active profile choice
+  // Remember View, Active Profile, and Active Tab
+  useEffect(() => {
+    localStorage.setItem('rel_current_view', currentView);
+  }, [currentView]);
+
   useEffect(() => {
     localStorage.setItem('rel_active_profile', activeProfile);
   }, [activeProfile]);
 
+  useEffect(() => {
+    localStorage.setItem('rel_active_tab', activeTab);
+  }, [activeTab]);
+
   // Real-time Cloud Sync for Quiz Answers, Questions, and Love Notes
   useEffect(() => {
     if (!db) {
-      // Fallback to localStorage if Firebase isn't configured
       const savedAnswers = localStorage.getItem('rel_quiz_answers');
       if (savedAnswers) setAnswers(JSON.parse(savedAnswers));
       
@@ -93,7 +104,6 @@ export default function App() {
       return;
     }
 
-    // 1. Sync Quiz Answers
     const unsubAnswers = onSnapshot(doc(db, "relationship", "quizAnswers"), (docSnap) => {
       if (docSnap.exists()) {
         setAnswers(docSnap.data());
@@ -101,21 +111,18 @@ export default function App() {
       }
     });
 
-    // 2. Sync Love Notes
     const unsubNotes = onSnapshot(doc(db, "relationship", "loveNotes"), (docSnap) => {
       if (docSnap.exists() && docSnap.data().items) {
         setNotes(docSnap.data().items);
       }
     });
 
-    // 3. Sync Daily Questions (Ensures both devices get the exact same 5 questions without shuffling on refresh)
     const initQuestions = async () => {
       const qDocRef = doc(db, "relationship", "currentQuestions");
       const qSnap = await getDoc(qDocRef);
       if (qSnap.exists()) {
         setCurrentQuizQuestions(qSnap.data().questions);
       } else {
-        // First device to open generates 5 random questions and saves them to the cloud for everyone
         const shuffled = [...questionPool].sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, 5);
         await setDoc(qDocRef, { questions: selected });
@@ -151,7 +158,7 @@ export default function App() {
       try {
         await setDoc(doc(db, "relationship", "quizAnswers"), updatedAnswers);
       } catch (e) {
-        console.error("Error saving to cloud:", e);
+        console.error("Error saving answer to cloud:", e);
       }
     }
   };
@@ -186,7 +193,6 @@ export default function App() {
     }
   };
 
-  // Calculate Compatibility Match Score
   const calculateMatchScore = () => {
     if (currentQuizQuestions.length === 0) return 100;
     let answeredCount = 0;
