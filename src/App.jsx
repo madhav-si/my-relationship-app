@@ -3,6 +3,27 @@ import { questionPool } from './data/questions';
 import { db } from './firebase'; 
 import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
+// Helper to convert Google Drive sharing links into direct embed/view links
+const convertDriveLink = (url) => {
+  if (!url) return '';
+  // Check if it's a Google Drive link
+  if (url.includes('drive.google.com')) {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      const fileId = match[1];
+      // Return direct preview link format
+      return `https://drive.google.com/uc?export=view&id=${fileId}`;
+    }
+  }
+  return url;
+};
+
+// Helper to check if a URL is a video link
+const isVideoUrl = (url) => {
+  if (!url) return false;
+  return url.includes('youtube.com') || url.includes('youtu.be') || url.match(/\.(mp4|webm|ogg)$/i) || url.includes('drive.google.com');
+};
+
 export default function App() {
   const [currentView, setCurrentView] = useState(() => {
     return localStorage.getItem('rel_current_view') || 'landing';
@@ -50,57 +71,57 @@ export default function App() {
   const [activeWishInput, setActiveWishInput] = useState({ eventId: null, text: '' });
   const [openWishDropdowns, setOpenWishDropdowns] = useState({});
 
-  // Timeline State (Now includes optional imageUrl for events)
+  // Timeline State
   const [events, setEvents] = useState(() => {
-    const saved = localStorage.getItem('rel_events_v6');
+    const saved = localStorage.getItem('rel_events_v7');
     if (saved) return JSON.parse(saved);
     return [
-      { id: 1, date: '2024-09-07', title: 'Entering Her Life', category: 'Milestone', description: 'Madhav came into Shristi’s life 💖', imageUrl: '' },
-      { id: 2, date: '2024-11-01', title: 'First Hotel Together', category: 'Milestone', description: 'Our first time getting a hotel together.', imageUrl: '' },
-      { id: 3, date: '2024-12-14', title: 'Confession Day 💌', category: 'Milestone', description: 'The magical day we confessed our feelings to each other.', imageUrl: '' },
-      { id: 4, date: '2024-12-23', title: 'Officially Dating 🎉', category: 'Anniversary', description: 'The official beginning of our forever relationship!', imageUrl: '' },
-      { id: 5, date: '2024-12-14', title: 'Sleeping & Waking on Calls Era', category: 'Routine', description: 'From Dec 14 until NEET day (May 4, 2025), sleeping and waking up on calls every single day.', imageUrl: '' },
+      { id: 1, date: '2024-09-07', title: 'Entering Her Life', category: 'Milestone', description: 'Madhav came into Shristi’s life 💖', mediaUrl: '' },
+      { id: 2, date: '2024-11-01', title: 'First Hotel Together', category: 'Milestone', description: 'Our first time getting a hotel together.', mediaUrl: '' },
+      { id: 3, date: '2024-12-14', title: 'Confession Day 💌', category: 'Milestone', description: 'The magical day we confessed our feelings to each other.', mediaUrl: '' },
+      { id: 4, date: '2024-12-23', title: 'Officially Dating 🎉', category: 'Anniversary', description: 'The official beginning of our forever relationship!', mediaUrl: '' },
+      { id: 5, date: '2024-12-14', title: 'Sleeping & Waking on Calls Era', category: 'Routine', description: 'From Dec 14 until NEET day (May 4, 2025), sleeping and waking up on calls every single day.', mediaUrl: '' },
       
-      // Monthly Anniversaries on the 23rd starting Jan 23, 2025 onwards
-      { id: 6, date: '2025-01-23', title: '1st Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 1 month of us.', imageUrl: '' },
-      { id: 7, date: '2025-02-23', title: '2nd Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 2 months of us.', imageUrl: '' },
-      { id: 8, date: '2025-03-23', title: '3rd Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 3 months of us.', imageUrl: '' },
-      { id: 9, date: '2025-04-23', title: '4th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 4 months of us.', imageUrl: '' },
-      { id: 10, date: '2025-05-23', title: '5th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 5 months of us.', imageUrl: '' },
-      { id: 11, date: '2025-06-23', title: '6th Monthly Anniversary (Half Year!) 💖', category: 'Anniversary', description: 'Celebrating 6 amazing months together.', imageUrl: '' },
-      { id: 12, date: '2025-07-23', title: '7th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 7 months of us.', imageUrl: '' },
-      { id: 13, date: '2025-08-23', title: '8th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 8 months of us.', imageUrl: '' },
-      { id: 14, date: '2025-09-23', title: '9th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 9 months of us.', imageUrl: '' },
-      { id: 15, date: '2025-10-23', title: '10th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 10 months of us.', imageUrl: '' },
-      { id: 16, date: '2025-11-23', title: '11th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 11 months of us.', imageUrl: '' },
-      { id: 17, date: '2025-12-23', title: '1st Yearly Anniversary 🎉', category: 'Anniversary', description: 'Celebrating 1 full year of us!', imageUrl: '' },
-      { id: 18, date: '2026-01-23', title: '13th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 13 months together.', imageUrl: '' },
-      { id: 19, date: '2026-02-23', title: '14th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 14 months together.', imageUrl: '' },
-      { id: 20, date: '2026-03-23', title: '15th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 15 months together.', imageUrl: '' },
-      { id: 21, date: '2026-04-23', title: '16th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 16 months together.', imageUrl: '' },
-      { id: 22, date: '2026-05-23', title: '17th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 17 months together.', imageUrl: '' },
-      { id: 23, date: '2026-06-23', title: '18th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 18 months together.', imageUrl: '' },
-      { id: 24, date: '2026-07-23', title: '19th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 19 months together.', imageUrl: '' },
-      { id: 25, date: '2026-08-23', title: '20th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 20 months together.', imageUrl: '' },
-      { id: 26, date: '2026-09-23', title: '21st Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 21 months together.', imageUrl: '' },
+      // Monthly Anniversaries
+      { id: 6, date: '2025-01-23', title: '1st Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 1 month of us.', mediaUrl: '' },
+      { id: 7, date: '2025-02-23', title: '2nd Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 2 months of us.', mediaUrl: '' },
+      { id: 8, date: '2025-03-23', title: '3rd Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 3 months of us.', mediaUrl: '' },
+      { id: 9, date: '2025-04-23', title: '4th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 4 months of us.', mediaUrl: '' },
+      { id: 10, date: '2025-05-23', title: '5th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 5 months of us.', mediaUrl: '' },
+      { id: 11, date: '2025-06-23', title: '6th Monthly Anniversary (Half Year!) 💖', category: 'Anniversary', description: 'Celebrating 6 amazing months together.', mediaUrl: '' },
+      { id: 12, date: '2025-07-23', title: '7th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 7 months of us.', mediaUrl: '' },
+      { id: 13, date: '2025-08-23', title: '8th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 8 months of us.', mediaUrl: '' },
+      { id: 14, date: '2025-09-23', title: '9th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 9 months of us.', mediaUrl: '' },
+      { id: 15, date: '2025-10-23', title: '10th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 10 months of us.', mediaUrl: '' },
+      { id: 16, date: '2025-11-23', title: '11th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 11 months of us.', mediaUrl: '' },
+      { id: 17, date: '2025-12-23', title: '1st Yearly Anniversary 🎉', category: 'Anniversary', description: 'Celebrating 1 full year of us!', mediaUrl: '' },
+      { id: 18, date: '2026-01-23', title: '13th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 13 months together.', mediaUrl: '' },
+      { id: 19, date: '2026-02-23', title: '14th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 14 months together.', mediaUrl: '' },
+      { id: 20, date: '2026-03-23', title: '15th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 15 months together.', mediaUrl: '' },
+      { id: 21, date: '2026-04-23', title: '16th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 16 months together.', mediaUrl: '' },
+      { id: 22, date: '2026-05-23', title: '17th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 17 months together.', mediaUrl: '' },
+      { id: 23, date: '2026-06-23', title: '18th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 18 months together.', mediaUrl: '' },
+      { id: 24, date: '2026-07-23', title: '19th Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 19 months together.', mediaUrl: '' },
+      { id: 25, date: '2026-08-23', title: '20th Monthly Anniversary 💕', category: 'Anniversary', description: 'Celebrating 20 months together.', mediaUrl: '' },
+      { id: 26, date: '2026-09-23', title: '21st Monthly Anniversary 🥂', category: 'Anniversary', description: 'Celebrating 21 months together.', mediaUrl: '' },
 
       // Other Milestones
-      { id: 27, date: '2025-05-31', title: 'First Actual Date 💕', category: 'Date', description: 'Going on our very first actual date.', imageUrl: '' },
-      { id: 28, date: '2025-06-04', title: 'Our First Kiss 💋', category: 'Milestone', description: 'A magical unforgettable moment.', imageUrl: '' },
-      { id: 29, date: '2025-06-06', title: 'First Time at Her House', category: 'Milestone', description: 'Visiting Shristi’s house for the first time.', imageUrl: '' },
-      { id: 30, date: '2025-06-10', title: 'First Hickey ✨', category: 'Milestone', description: 'A playful mark of affection.', imageUrl: '' },
-      { id: 31, date: '2025-07-30', title: 'Madhav to College', category: 'Milestone', description: 'Madhav heading off to college.', imageUrl: '' },
-      { id: 32, date: '2026-01-11', title: 'Back to College', category: 'Milestone', description: 'Madhav heading back to college.', imageUrl: '' },
-      { id: 33, date: '2026-02-04', title: 'The Accident', category: 'Milestone', description: 'Madhav met with an accident.', imageUrl: '' },
-      { id: 34, date: '2026-02-05', title: 'Vein & Nerve Surgery', category: 'Milestone', description: 'First operation for vein and nerve reconstruction.', imageUrl: '' },
-      { id: 35, date: '2026-04-16', title: 'ACL Surgery', category: 'Milestone', description: 'Second operation for ACL reconstruction.', imageUrl: '' },
-      { id: 36, date: '2026-04-25', title: 'Shristi’s Birthday 🎂', category: 'Birthday', description: 'Celebrating Shristi’s special day!', imageUrl: '' },
-      { id: 37, date: '2026-09-21', title: 'Madhav’s Birthday 🎂', category: 'Birthday', description: 'Celebrating Madhav’s birthday!', imageUrl: '' },
-      { id: 38, date: '2026-09-28', title: 'MUA Surgery', category: 'Milestone', description: 'Operation for MUA.', imageUrl: '' }
+      { id: 27, date: '2025-05-31', title: 'First Actual Date 💕', category: 'Date', description: 'Going on our very first actual date.', mediaUrl: '' },
+      { id: 28, date: '2025-06-04', title: 'Our First Kiss 💋', category: 'Milestone', description: 'A magical unforgettable moment.', mediaUrl: '' },
+      { id: 29, date: '2025-06-06', title: 'First Time at Her House', category: 'Milestone', description: 'Visiting Shristi’s house for the first time.', mediaUrl: '' },
+      { id: 30, date: '2025-06-10', title: 'First Hickey ✨', category: 'Milestone', description: 'A playful mark of affection.', mediaUrl: '' },
+      { id: 31, date: '2025-07-30', title: 'Madhav to College', category: 'Milestone', description: 'Madhav heading off to college.', mediaUrl: '' },
+      { id: 32, date: '2026-01-11', title: 'Back to College', category: 'Milestone', description: 'Madhav heading back to college.', mediaUrl: '' },
+      { id: 33, date: '2026-02-04', title: 'The Accident', category: 'Milestone', description: 'Madhav met with an accident.', mediaUrl: '' },
+      { id: 34, date: '2026-02-05', title: 'Vein & Nerve Surgery', category: 'Milestone', description: 'First operation for vein and nerve reconstruction.', mediaUrl: '' },
+      { id: 35, date: '2026-04-16', title: 'ACL Surgery', category: 'Milestone', description: 'Second operation for ACL reconstruction.', mediaUrl: '' },
+      { id: 36, date: '2026-04-25', title: 'Shristi’s Birthday 🎂', category: 'Birthday', description: 'Celebrating Shristi’s special day!', mediaUrl: '' },
+      { id: 37, date: '2026-09-21', title: 'Madhav’s Birthday 🎂', category: 'Birthday', description: 'Celebrating Madhav’s birthday!', mediaUrl: '' },
+      { id: 38, date: '2026-09-28', title: 'MUA Surgery', category: 'Milestone', description: 'Operation for MUA.', mediaUrl: '' }
     ];
   });
 
-  const [newEvent, setNewEvent] = useState({ date: '', title: '', category: 'Milestone', description: '', imageUrl: '' });
+  const [newEvent, setNewEvent] = useState({ date: '', title: '', category: 'Milestone', description: '', mediaUrl: '' });
   const [editingEventId, setEditingEventId] = useState(null);
 
   // Calendar State
@@ -113,11 +134,11 @@ export default function App() {
   useEffect(() => { localStorage.setItem('rel_active_profile', activeProfile); }, [activeProfile]);
   useEffect(() => { localStorage.setItem('rel_active_tab', activeTab); }, [activeTab]);
   useEffect(() => { localStorage.setItem('rel_quiz_submitted', isQuizSubmitted); }, [isQuizSubmitted]);
-  useEffect(() => { localStorage.setItem('rel_events_v6', JSON.stringify(events)); }, [events]);
+  useEffect(() => { localStorage.setItem('rel_events_v7', JSON.stringify(events)); }, [events]);
   useEffect(() => { localStorage.setItem('rel_photos', JSON.stringify(photos)); }, [photos]);
   useEffect(() => { localStorage.setItem('rel_anniversary_wishes', JSON.stringify(anniversaryWishes)); }, [anniversaryWishes]);
 
-  // Real-time Cloud Sync
+  // Real-time Cloud Sync & Daily Non-Repeating Questions
   useEffect(() => {
     if (!db) {
       const savedAnswers = localStorage.getItem('rel_quiz_answers');
@@ -132,8 +153,7 @@ export default function App() {
       const savedWishes = localStorage.getItem('rel_anniversary_wishes');
       if (savedWishes) setAnniversaryWishes(JSON.parse(savedWishes));
 
-      const shuffled = [...questionPool].sort(() => 0.5 - Math.random());
-      setCurrentQuizQuestions(shuffled.slice(0, 5));
+      setupDailyQuestions(null);
       return;
     }
 
@@ -157,21 +177,44 @@ export default function App() {
       if (docSnap.exists() && docSnap.data().items) { setEvents(docSnap.data().items); }
     });
 
-    const initQuestions = async () => {
-      const qDocRef = doc(db, "relationship", "currentQuestions");
+    const setupDailyQuestions = async () => {
+      const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const qDocRef = doc(db, "relationship", "dailyQuestions");
       const qSnap = await getDoc(qDocRef);
-      if (qSnap.exists()) {
-        setCurrentQuizQuestions(qSnap.data().questions);
-      } else {
-        const shuffled = [...questionPool].sort(() => 0.5 - Math.random());
+
+      let data = qSnap.exists() ? qSnap.data() : {};
+      
+      if (data.date !== todayStr) {
+        // Day has changed! Pick next 5 non-repeating questions
+        const usedIds = data.usedIds || [];
+        let available = questionPool.filter(q => !usedIds.includes(q.id));
+        
+        // If all questions have been used, reset the cycle
+        if (available.length < 5) {
+          available = [...questionPool];
+          usedIds.length = 0;
+        }
+
+        // Shuffle available and pick 5
+        const shuffled = [...available].sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, 5);
-        await setDoc(qDocRef, { questions: selected });
+        const newUsedIds = [...usedIds, ...selected.map(q => q.id)];
+
+        const newDocData = {
+          date: todayStr,
+          questions: selected,
+          usedIds: newUsedIds
+        };
+
+        await setDoc(qDocRef, newDocData);
         setCurrentQuizQuestions(selected);
+      } else {
+        setCurrentQuizQuestions(data.questions);
       }
       setIsCloudSynced(true);
     };
 
-    initQuestions();
+    setupDailyQuestions();
 
     return () => {
       unsubAnswers();
@@ -199,16 +242,19 @@ export default function App() {
     e.preventDefault();
     if (!newEvent.date || !newEvent.title) return;
 
+    // Convert Drive link if present
+    const processedMediaUrl = convertDriveLink(newEvent.mediaUrl);
+
     let updatedEvents = [];
     if (editingEventId) {
-      updatedEvents = events.map(ev => ev.id === editingEventId ? { ...ev, ...newEvent } : ev);
+      updatedEvents = events.map(ev => ev.id === editingEventId ? { ...ev, ...newEvent, mediaUrl: processedMediaUrl } : ev);
       setEditingEventId(null);
     } else {
-      updatedEvents = [{ id: Date.now(), ...newEvent }, ...events];
+      updatedEvents = [{ id: Date.now(), ...newEvent, mediaUrl: processedMediaUrl }, ...events];
     }
     setEvents(updatedEvents);
-    localStorage.setItem('rel_events_v6', JSON.stringify(updatedEvents));
-    setNewEvent({ date: '', title: '', category: 'Milestone', description: '', imageUrl: '' });
+    localStorage.setItem('rel_events_v7', JSON.stringify(updatedEvents));
+    setNewEvent({ date: '', title: '', category: 'Milestone', description: '', mediaUrl: '' });
 
     if (db) {
       try { await setDoc(doc(db, "relationship", "timelineEvents"), { items: updatedEvents }); } catch (e) { console.error(e); }
@@ -217,7 +263,7 @@ export default function App() {
 
   const handleEditEvent = (evt) => {
     setEditingEventId(evt.id);
-    setNewEvent({ date: evt.date, title: evt.title, category: evt.category, description: evt.description, imageUrl: evt.imageUrl || '' });
+    setNewEvent({ date: evt.date, title: evt.title, category: evt.category, description: evt.description, mediaUrl: evt.mediaUrl || '' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -225,7 +271,7 @@ export default function App() {
     if (confirm("Are you sure you want to delete this memory?")) {
       const updatedEvents = events.filter(ev => ev.id !== id);
       setEvents(updatedEvents);
-      localStorage.setItem('rel_events_v6', JSON.stringify(updatedEvents));
+      localStorage.setItem('rel_events_v7', JSON.stringify(updatedEvents));
 
       if (db) {
         try { await setDoc(doc(db, "relationship", "timelineEvents"), { items: updatedEvents }); } catch (e) { console.error(e); }
@@ -267,9 +313,10 @@ export default function App() {
   const handleAddPhoto = async (e) => {
     e.preventDefault();
     if (!newPhotoUrl.trim()) return;
+    const processedUrl = convertDriveLink(newPhotoUrl);
     const photo = {
       id: Date.now(),
-      url: newPhotoUrl,
+      url: processedUrl,
       caption: newPhotoCaption || 'Our special moment 💕',
       date: newPhotoDate || new Date().toISOString().split('T')[0],
       sender: activeProfile
@@ -362,7 +409,7 @@ export default function App() {
               Madhav & Shristi
             </h1>
             <p className="text-sm sm:text-base text-slate-600 font-medium leading-relaxed mb-8">
-              A private digital universe dedicated to our endless love story, daily couple quiz harmonization, shared memories timeline, photo album, and secret love notes.
+              A private digital universe dedicated to our endless love story, daily unchanging questions, Google Drive media support, and secret love notes.
             </p>
             <div className="bg-rose-50/80 p-4 rounded-2xl border border-rose-200 mb-8 shadow-inner">
               <p className="text-xs font-bold text-rose-800 mb-3">Select who is opening this today:</p>
@@ -445,7 +492,7 @@ export default function App() {
                   activeTab === 'quiz' ? 'border-rose-600 text-rose-700 bg-white/80' : 'border-transparent text-slate-600 hover:text-rose-600'
                 }`}
               >
-                🎯 Quiz
+                🎯 Daily Quiz
               </button>
               <button
                 onClick={() => setActiveTab('timeline')}
@@ -461,7 +508,7 @@ export default function App() {
                   activeTab === 'photos' ? 'border-rose-600 text-rose-700 bg-white/80' : 'border-transparent text-slate-600 hover:text-rose-600'
                 }`}
               >
-                📸 Photo Album ({photos.length})
+                📸 Photo/Video Album ({photos.length})
               </button>
               <button
                 onClick={() => setActiveTab('notes')}
@@ -480,10 +527,10 @@ export default function App() {
                 <div className="bg-gradient-to-r from-rose-500 to-pink-600 rounded-3xl p-6 text-white shadow-xl flex items-center justify-between">
                   <div>
                     <span className="text-xs uppercase tracking-widest font-extrabold bg-white/20 px-3 py-1 rounded-full">
-                      Compatibility Harmony ✨
+                      Daily Unique Questions ✨
                     </span>
                     <h3 className="text-2xl font-black mt-2">Soulmate Match Score</h3>
-                    <p className="text-xs text-rose-100 mt-0.5">Calculated live based on your shared answers!</p>
+                    <p className="text-xs text-rose-100 mt-0.5">Refreshes every day with brand new questions!</p>
                   </div>
                   <div className="text-center bg-white/20 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/30 shadow-inner">
                     <span className="text-3xl font-black animate-pulse">{matchScore}%</span>
@@ -495,7 +542,7 @@ export default function App() {
                   <div className="mb-6 flex justify-between items-center">
                     <div>
                       <h2 className="text-2xl font-extrabold text-slate-800 flex items-center gap-2">
-                        <span>💖</span> Daily 5-Question Quiz
+                        <span>💖</span> Today's 5-Question Quiz
                       </h2>
                       <p className="text-sm text-slate-600 mt-1">
                         Answering as <span className="font-extrabold text-rose-600 underline">{activeProfile}</span>
@@ -515,7 +562,7 @@ export default function App() {
                     isQuizSubmitted ? (
                       <div className="space-y-6">
                         <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-center text-emerald-800 font-bold text-sm">
-                          🎉 Quiz completed & submitted! Review your answers below together.
+                          🎉 Today's quiz completed! Review your answers below together.
                         </div>
                         {currentQuizQuestions.map((q, idx) => (
                           <div key={q.id} className="bg-gradient-to-br from-rose-50/80 to-pink-50/60 p-6 rounded-2xl border border-rose-200">
@@ -726,10 +773,10 @@ export default function App() {
                       <option value="Routine">Routine / Habit</option>
                     </select>
                     <input
-                      type="url"
-                      placeholder="Optional Photo URL (e.g. Unsplash, Imgur link)..."
-                      value={newEvent.imageUrl}
-                      onChange={(e) => setNewEvent({ ...newEvent, imageUrl: e.target.value })}
+                      type="text"
+                      placeholder="Image or Google Drive Video/Image URL..."
+                      value={newEvent.mediaUrl}
+                      onChange={(e) => setNewEvent({ ...newEvent, mediaUrl: e.target.value })}
                       className="p-3.5 rounded-2xl border border-rose-300 text-sm focus:outline-none focus:ring-4 focus:ring-rose-400/40 bg-white shadow-inner font-medium"
                     />
                     <div className="sm:col-span-2">
@@ -751,7 +798,7 @@ export default function App() {
                       {editingEventId && (
                         <button
                           type="button"
-                          onClick={() => { setEditingEventId(null); setNewEvent({ date: '', title: '', category: 'Milestone', description: '', imageUrl: '' }); }}
+                          onClick={() => { setEditingEventId(null); setNewEvent({ date: '', title: '', category: 'Milestone', description: '', mediaUrl: '' }); }}
                           className="px-6 bg-slate-200 text-slate-700 font-bold rounded-2xl text-sm hover:bg-slate-300 transition-all"
                         >
                           Cancel
@@ -779,14 +826,18 @@ export default function App() {
                             <div className="absolute -left-[11px] top-2 w-5 h-5 rounded-full bg-rose-600 border-4 border-white shadow-lg group-hover:scale-150 transition-transform duration-300" />
                             
                             <div className="bg-white/90 hover:bg-white p-6 rounded-3xl border border-rose-200 shadow-md hover:shadow-xl transition-all overflow-hidden">
-                              {evt.imageUrl && (
+                              {evt.mediaUrl && (
                                 <div className="mb-4 rounded-2xl overflow-hidden h-48 bg-rose-50 border border-rose-100 shadow-inner">
-                                  <img 
-                                    src={evt.imageUrl} 
-                                    alt={evt.title} 
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                    onError={(e) => { e.target.style.display = 'none'; }}
-                                  />
+                                  {isVideoUrl(evt.mediaUrl) ? (
+                                    <video src={evt.mediaUrl} controls className="w-full h-full object-cover" />
+                                  ) : (
+                                    <img 
+                                      src={evt.mediaUrl} 
+                                      alt={evt.title} 
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                      onError={(e) => { e.target.style.display = 'none'; }}
+                                    />
+                                  )}
                                 </div>
                               )}
 
@@ -868,14 +919,14 @@ export default function App() {
               <div className="space-y-6">
                 <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-rose-200/80 p-6 sm:p-8">
                   <h3 className="text-xl font-extrabold text-slate-800 mb-2 flex items-center gap-2">
-                    <span>📸</span> Add Photo to Our Album
+                    <span>📸</span> Add Photo / Video Link to Album
                   </h3>
-                  <p className="text-xs text-slate-500 mb-4">Upload or paste an image link to share a precious memory as <strong className="text-rose-600">{activeProfile}</strong>.</p>
+                  <p className="text-xs text-slate-500 mb-4">Paste any image or Google Drive link to share media as <strong className="text-rose-600">{activeProfile}</strong>.</p>
                   
                   <form onSubmit={handleAddPhoto} className="space-y-4">
                     <input
                       type="url"
-                      placeholder="Paste Image URL (e.g. Imgur, Unsplash, Google Photos link)..."
+                      placeholder="Paste Image URL or Google Drive Viewer Link..."
                       value={newPhotoUrl}
                       onChange={(e) => setNewPhotoUrl(e.target.value)}
                       className="w-full p-3.5 rounded-2xl border border-rose-300 text-sm focus:outline-none focus:ring-4 focus:ring-rose-400/40 bg-white shadow-inner font-medium"
@@ -910,18 +961,22 @@ export default function App() {
                     <span>💖</span> Our Memories Album
                   </h3>
                   {photos.length === 0 ? (
-                    <p className="text-sm text-slate-500 text-center py-10 italic">No photos added yet. Add your first memory above!</p>
+                    <p className="text-sm text-slate-500 text-center py-10 italic">No media added yet. Add your first memory above!</p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       {photos.map((photo) => (
                         <div key={photo.id} className="bg-white rounded-3xl border border-rose-200 shadow-lg overflow-hidden flex flex-col justify-between group">
                           <div className="relative overflow-hidden h-64 bg-rose-50">
-                            <img 
-                              src={photo.url} 
-                              alt={photo.caption} 
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                              onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?auto=format&fit=crop&w=600&q=80'; }}
-                            />
+                            {isVideoUrl(photo.url) ? (
+                              <video src={photo.url} controls className="w-full h-full object-cover" />
+                            ) : (
+                              <img 
+                                src={photo.url} 
+                                alt={photo.caption} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?auto=format&fit=crop&w=600&q=80'; }}
+                              />
+                            )}
                             <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-extrabold text-rose-700 shadow-sm border border-rose-200">
                               {photo.date}
                             </span>
