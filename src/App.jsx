@@ -3,25 +3,35 @@ import { questionPool } from './data/questions';
 import { db } from './firebase'; 
 import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
-// Helper to convert Google Drive sharing links into direct embed/view links
-const convertDriveLink = (url) => {
+// Robust Google Drive Link Converter for Images & Videos
+const getEmbeddableMediaUrl = (url) => {
   if (!url) return '';
-  // Check if it's a Google Drive link
   if (url.includes('drive.google.com')) {
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (match && match[1]) {
       const fileId = match[1];
-      // Return direct preview link format
-      return `https://drive.google.com/uc?export=view&id=${fileId}`;
+      // Use preview format which embeds reliably in iframes/media tags across devices
+      return `https://drive.google.com/file/d/${fileId}/preview`;
     }
   }
   return url;
 };
 
-// Helper to check if a URL is a video link
+// Direct image/video source converter for standard tags
+const getDirectMediaUrl = (url) => {
+  if (!url) return '';
+  if (url.includes('drive.google.com')) {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+    }
+  }
+  return url;
+};
+
 const isVideoUrl = (url) => {
   if (!url) return false;
-  return url.includes('youtube.com') || url.includes('youtu.be') || url.match(/\.(mp4|webm|ogg)$/i) || url.includes('drive.google.com');
+  return url.includes('youtube.com') || url.includes('youtu.be') || url.includes('drive.google.com') || url.match(/\.(mp4|webm|ogg|mov)$/i);
 };
 
 export default function App() {
@@ -44,11 +54,13 @@ export default function App() {
     return localStorage.getItem('rel_quiz_submitted') === 'true';
   });
 
-  // Love Notes State
+  // Love Notes State (Now supports media & editing)
   const [notes, setNotes] = useState([
-    { id: 1, sender: 'Madhav', text: 'Hey gorgeous, just wanted to remind you how much I love sleeping and waking up on calls with you! ❤', date: '2026-10-01' }
+    { id: 1, sender: 'Madhav', text: 'Hey gorgeous, just wanted to remind you how much I love sleeping and waking up on calls with you! ❤', mediaUrl: '', date: '2026-10-01' }
   ]);
   const [newNoteText, setNewNoteText] = useState('');
+  const [newNoteMedia, setNewNoteMedia] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState(null);
 
   // Photo Album State
   const [photos, setPhotos] = useState(() => {
@@ -73,7 +85,7 @@ export default function App() {
 
   // Timeline State
   const [events, setEvents] = useState(() => {
-    const saved = localStorage.getItem('rel_events_v7');
+    const saved = localStorage.getItem('rel_events_v8');
     if (saved) return JSON.parse(saved);
     return [
       { id: 1, date: '2024-09-07', title: 'Entering Her Life', category: 'Milestone', description: 'Madhav came into Shristi’s life 💖', mediaUrl: '' },
@@ -134,7 +146,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('rel_active_profile', activeProfile); }, [activeProfile]);
   useEffect(() => { localStorage.setItem('rel_active_tab', activeTab); }, [activeTab]);
   useEffect(() => { localStorage.setItem('rel_quiz_submitted', isQuizSubmitted); }, [isQuizSubmitted]);
-  useEffect(() => { localStorage.setItem('rel_events_v7', JSON.stringify(events)); }, [events]);
+  useEffect(() => { localStorage.setItem('rel_events_v8', JSON.stringify(events)); }, [events]);
   useEffect(() => { localStorage.setItem('rel_photos', JSON.stringify(photos)); }, [photos]);
   useEffect(() => { localStorage.setItem('rel_anniversary_wishes', JSON.stringify(anniversaryWishes)); }, [anniversaryWishes]);
 
@@ -178,24 +190,21 @@ export default function App() {
     });
 
     const setupDailyQuestions = async () => {
-      const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const todayStr = new Date().toISOString().split('T')[0];
       const qDocRef = doc(db, "relationship", "dailyQuestions");
       const qSnap = await getDoc(qDocRef);
 
       let data = qSnap.exists() ? qSnap.data() : {};
       
       if (data.date !== todayStr) {
-        // Day has changed! Pick next 5 non-repeating questions
         const usedIds = data.usedIds || [];
         let available = questionPool.filter(q => !usedIds.includes(q.id));
         
-        // If all questions have been used, reset the cycle
         if (available.length < 5) {
           available = [...questionPool];
           usedIds.length = 0;
         }
 
-        // Shuffle available and pick 5
         const shuffled = [...available].sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, 5);
         const newUsedIds = [...usedIds, ...selected.map(q => q.id)];
@@ -242,18 +251,15 @@ export default function App() {
     e.preventDefault();
     if (!newEvent.date || !newEvent.title) return;
 
-    // Convert Drive link if present
-    const processedMediaUrl = convertDriveLink(newEvent.mediaUrl);
-
     let updatedEvents = [];
     if (editingEventId) {
-      updatedEvents = events.map(ev => ev.id === editingEventId ? { ...ev, ...newEvent, mediaUrl: processedMediaUrl } : ev);
+      updatedEvents = events.map(ev => ev.id === editingEventId ? { ...ev, ...newEvent } : ev);
       setEditingEventId(null);
     } else {
-      updatedEvents = [{ id: Date.now(), ...newEvent, mediaUrl: processedMediaUrl }, ...events];
+      updatedEvents = [{ id: Date.now(), ...newEvent }, ...events];
     }
     setEvents(updatedEvents);
-    localStorage.setItem('rel_events_v7', JSON.stringify(updatedEvents));
+    localStorage.setItem('rel_events_v8', JSON.stringify(updatedEvents));
     setNewEvent({ date: '', title: '', category: 'Milestone', description: '', mediaUrl: '' });
 
     if (db) {
@@ -271,7 +277,7 @@ export default function App() {
     if (confirm("Are you sure you want to delete this memory?")) {
       const updatedEvents = events.filter(ev => ev.id !== id);
       setEvents(updatedEvents);
-      localStorage.setItem('rel_events_v7', JSON.stringify(updatedEvents));
+      localStorage.setItem('rel_events_v8', JSON.stringify(updatedEvents));
 
       if (db) {
         try { await setDoc(doc(db, "relationship", "timelineEvents"), { items: updatedEvents }); } catch (e) { console.error(e); }
@@ -291,19 +297,36 @@ export default function App() {
     }
   };
 
+  const handleEditNote = (note) => {
+    setEditingNoteId(note.id);
+    setNewNoteText(note.text);
+    setNewNoteMedia(note.mediaUrl || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleSendNote = async (e) => {
     e.preventDefault();
     if (!newNoteText.trim()) return;
-    const note = {
-      id: Date.now(),
-      sender: activeProfile,
-      text: newNoteText,
-      date: new Date().toISOString().split('T')[0]
-    };
-    const updatedNotes = [note, ...notes];
+
+    let updatedNotes = [];
+    if (editingNoteId) {
+      updatedNotes = notes.map(n => n.id === editingNoteId ? { ...n, text: newNoteText, mediaUrl: newNoteMedia } : n);
+      setEditingNoteId(null);
+    } else {
+      const note = {
+        id: Date.now(),
+        sender: activeProfile,
+        text: newNoteText,
+        mediaUrl: newNoteMedia,
+        date: new Date().toISOString().split('T')[0]
+      };
+      updatedNotes = [note, ...notes];
+    }
+
     setNotes(updatedNotes);
     localStorage.setItem('rel_notes', JSON.stringify(updatedNotes));
     setNewNoteText('');
+    setNewNoteMedia('');
 
     if (db) {
       try { await setDoc(doc(db, "relationship", "loveNotes"), { items: updatedNotes }); } catch (e) { console.error(e); }
@@ -313,10 +336,9 @@ export default function App() {
   const handleAddPhoto = async (e) => {
     e.preventDefault();
     if (!newPhotoUrl.trim()) return;
-    const processedUrl = convertDriveLink(newPhotoUrl);
     const photo = {
       id: Date.now(),
-      url: processedUrl,
+      url: newPhotoUrl,
       caption: newPhotoCaption || 'Our special moment 💕',
       date: newPhotoDate || new Date().toISOString().split('T')[0],
       sender: activeProfile
@@ -400,16 +422,16 @@ export default function App() {
         <div className="min-h-screen flex items-center justify-center px-4 relative z-20">
           <div className="max-w-xl w-full bg-white/80 backdrop-blur-2xl rounded-3xl shadow-2xl border border-rose-200/80 p-8 sm:p-12 text-center">
             <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-tr from-rose-500 to-pink-500 rounded-3xl flex items-center justify-center text-5xl shadow-xl shadow-rose-500/30 animate-pulse">
-              💖
+              💗
             </div>
             <span className="text-xs font-extrabold uppercase tracking-widest text-rose-600 bg-rose-50 px-4 py-1.5 rounded-full border border-rose-200 shadow-sm">
               ✨ Welcome To Our Sanctuary ✨
             </span>
             <h1 className="text-3xl sm:text-4xl font-black bg-gradient-to-r from-rose-600 via-pink-600 to-red-600 bg-clip-text text-transparent mt-4 mb-3">
-              Madhav & Shristi
+              Our Relationship Tracker
             </h1>
             <p className="text-sm sm:text-base text-slate-600 font-medium leading-relaxed mb-8">
-              A private digital universe dedicated to our endless love story, daily unchanging questions, Google Drive media support, and secret love notes.
+              A private digital universe dedicated to Madhav & Shristi's endless love story, daily unique questions, cloud-synced media, and secret love notes.
             </p>
             <div className="bg-rose-50/80 p-4 rounded-2xl border border-rose-200 mb-8 shadow-inner">
               <p className="text-xs font-bold text-rose-800 mb-3">Select who is opening this today:</p>
@@ -437,7 +459,7 @@ export default function App() {
               className="w-full bg-gradient-to-r from-rose-600 via-pink-600 to-red-600 text-white font-extrabold py-4 px-8 rounded-2xl shadow-xl shadow-rose-500/40 hover:shadow-2xl hover:scale-[1.02] active:scale-98 transition-all text-base flex items-center justify-center gap-3"
             >
               <span>Enter Our World</span>
-              <span className="text-xl animate-bounce">❤️</span>
+              <span className="text-xl animate-bounce">💗</span>
             </button>
           </div>
         </div>
@@ -454,11 +476,11 @@ export default function App() {
                   🏠
                 </button>
                 <div>
-                  <h1 className="text-2xl font-extrabold bg-gradient-to-r from-rose-600 via-pink-600 to-red-600 bg-clip-text text-transparent">
-                    Madhav & Shristi
+                  <h1 className="text-2xl font-extrabold bg-gradient-to-r from-rose-600 via-pink-600 to-red-600 bg-clip-text text-transparent flex items-center gap-2">
+                    <span>💗</span> Our Relationship Tracker
                   </h1>
                   <p className="text-xs text-rose-600 font-semibold flex items-center gap-1">
-                    <span>✨ Our Forever Love Story</span>
+                    <span>Madhav & Shristi • Forever</span>
                     {isCloudSynced && <span className="text-emerald-600 ml-2">• Cloud Synced ☁️</span>}
                   </p>
                 </div>
@@ -508,7 +530,7 @@ export default function App() {
                   activeTab === 'photos' ? 'border-rose-600 text-rose-700 bg-white/80' : 'border-transparent text-slate-600 hover:text-rose-600'
                 }`}
               >
-                📸 Photo/Video Album ({photos.length})
+                📸 Album ({photos.length})
               </button>
               <button
                 onClick={() => setActiveTab('notes')}
@@ -774,7 +796,7 @@ export default function App() {
                     </select>
                     <input
                       type="text"
-                      placeholder="Image or Google Drive Video/Image URL..."
+                      placeholder="Image or Google Drive Link..."
                       value={newEvent.mediaUrl}
                       onChange={(e) => setNewEvent({ ...newEvent, mediaUrl: e.target.value })}
                       className="p-3.5 rounded-2xl border border-rose-300 text-sm focus:outline-none focus:ring-4 focus:ring-rose-400/40 bg-white shadow-inner font-medium"
@@ -827,12 +849,21 @@ export default function App() {
                             
                             <div className="bg-white/90 hover:bg-white p-6 rounded-3xl border border-rose-200 shadow-md hover:shadow-xl transition-all overflow-hidden">
                               {evt.mediaUrl && (
-                                <div className="mb-4 rounded-2xl overflow-hidden h-48 bg-rose-50 border border-rose-100 shadow-inner">
-                                  {isVideoUrl(evt.mediaUrl) ? (
-                                    <video src={evt.mediaUrl} controls className="w-full h-full object-cover" />
+                                <div className="mb-4 rounded-2xl overflow-hidden h-64 bg-rose-50 border border-rose-100 shadow-inner">
+                                  {isVideoUrl(evt.mediaUrl) || evt.mediaUrl.includes('drive.google.com') ? (
+                                    evt.mediaUrl.includes('drive.google.com') ? (
+                                      <iframe 
+                                        src={getEmbeddableMediaUrl(evt.mediaUrl)} 
+                                        className="w-full h-full border-0" 
+                                        allow="autoplay"
+                                        title={evt.title}
+                                      />
+                                    ) : (
+                                      <video src={evt.mediaUrl} controls className="w-full h-full object-cover" />
+                                    )
                                   ) : (
                                     <img 
-                                      src={evt.mediaUrl} 
+                                      src={getDirectMediaUrl(evt.mediaUrl)} 
                                       alt={evt.title} 
                                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                       onError={(e) => { e.target.style.display = 'none'; }}
@@ -967,11 +998,20 @@ export default function App() {
                       {photos.map((photo) => (
                         <div key={photo.id} className="bg-white rounded-3xl border border-rose-200 shadow-lg overflow-hidden flex flex-col justify-between group">
                           <div className="relative overflow-hidden h-64 bg-rose-50">
-                            {isVideoUrl(photo.url) ? (
-                              <video src={photo.url} controls className="w-full h-full object-cover" />
+                            {isVideoUrl(photo.url) || photo.url.includes('drive.google.com') ? (
+                              photo.url.includes('drive.google.com') ? (
+                                <iframe 
+                                  src={getEmbeddableMediaUrl(photo.url)} 
+                                  className="w-full h-full border-0" 
+                                  allow="autoplay"
+                                  title={photo.caption}
+                                />
+                              ) : (
+                                <video src={photo.url} controls className="w-full h-full object-cover" />
+                              )
                             ) : (
                               <img 
-                                src={photo.url} 
+                                src={getDirectMediaUrl(photo.url)} 
                                 alt={photo.caption} 
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                 onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?auto=format&fit=crop&w=600&q=80'; }}
@@ -1003,9 +1043,9 @@ export default function App() {
               <div className="space-y-6">
                 <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-rose-200/80 p-6 sm:p-8">
                   <h3 className="text-xl font-extrabold text-slate-800 mb-2 flex items-center gap-2">
-                    <span>💌</span> Drop a Secret Love Note
+                    <span>💌</span> {editingNoteId ? 'Edit Love Note' : 'Drop a Secret Love Note'}
                   </h3>
-                  <p className="text-xs text-slate-500 mb-4">Leave a sweet note as <strong className="text-rose-600">{activeProfile}</strong> for each other to read anytime!</p>
+                  <p className="text-xs text-slate-500 mb-4">Leave a sweet note with optional media as <strong className="text-rose-600">{activeProfile}</strong>!</p>
                   
                   <form onSubmit={handleSendNote} className="space-y-4">
                     <textarea
@@ -1016,12 +1056,30 @@ export default function App() {
                       className="w-full p-4 rounded-2xl border border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-400/40 bg-white shadow-inner text-sm font-medium"
                       required
                     />
-                    <button
-                      type="submit"
-                      className="w-full bg-gradient-to-r from-rose-600 to-pink-600 hover:shadow-xl text-white font-extrabold py-3.5 rounded-2xl text-sm transition-all"
-                    >
-                      Send Love Note 💕
-                    </button>
+                    <input
+                      type="url"
+                      value={newNoteMedia}
+                      onChange={(e) => setNewNoteMedia(e.target.value)}
+                      placeholder="Optional image or Google Drive video link..."
+                      className="w-full p-3.5 rounded-2xl border border-rose-300 text-sm focus:outline-none focus:ring-4 focus:ring-rose-400/40 bg-white shadow-inner font-medium"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="flex-1 bg-gradient-to-r from-rose-600 to-pink-600 hover:shadow-xl text-white font-extrabold py-3.5 rounded-2xl text-sm transition-all"
+                      >
+                        {editingNoteId ? 'Save Note Changes ✨' : 'Send Love Note 💕'}
+                      </button>
+                      {editingNoteId && (
+                        <button
+                          type="button"
+                          onClick={() => { setEditingNoteId(null); setNewNoteText(''); setNewNoteMedia(''); }}
+                          className="px-6 bg-slate-200 text-slate-700 font-bold rounded-2xl text-sm hover:bg-slate-300 transition-all"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
                   </form>
                 </div>
 
@@ -1031,12 +1089,32 @@ export default function App() {
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {notes.map((note) => (
-                      <div key={note.id} className="bg-gradient-to-br from-rose-50 to-pink-50 p-5 rounded-3xl border border-rose-200 shadow-md flex flex-col justify-between">
+                      <div key={note.id} className="bg-gradient-to-br from-rose-50 to-pink-50 p-5 rounded-3xl border border-rose-200 shadow-md flex flex-col justify-between overflow-hidden">
+                        {note.mediaUrl && (
+                          <div className="mb-3 rounded-2xl overflow-hidden h-40 bg-white border border-rose-100 shadow-inner">
+                            {isVideoUrl(note.mediaUrl) || note.mediaUrl.includes('drive.google.com') ? (
+                              note.mediaUrl.includes('drive.google.com') ? (
+                                <iframe src={getEmbeddableMediaUrl(note.mediaUrl)} className="w-full h-full border-0" title="Note Media" />
+                              ) : (
+                                <video src={note.mediaUrl} controls className="w-full h-full object-cover" />
+                              )
+                            ) : (
+                              <img src={getDirectMediaUrl(note.mediaUrl)} alt="Note media" className="w-full h-full object-cover" />
+                            )}
+                          </div>
+                        )}
                         <p className="text-sm font-medium text-slate-700 italic mb-4">"{note.text}"</p>
                         <div className="flex justify-between items-center text-xs font-bold text-rose-600 border-t border-rose-200/60 pt-3">
                           <span>— From {note.sender}</span>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             <span className="text-slate-400 font-normal">{note.date}</span>
+                            <button
+                              onClick={() => handleEditNote(note)}
+                              className="text-rose-600 hover:text-rose-800 font-bold bg-white px-2 py-0.5 rounded-md border border-rose-200 shadow-sm"
+                              title="Edit Note"
+                            >
+                              ✏️
+                            </button>
                             <button
                               onClick={() => handleDeleteNote(note.id)}
                               className="text-red-500 hover:text-red-700 font-bold bg-white px-2 py-0.5 rounded-md border border-red-200 shadow-sm"
